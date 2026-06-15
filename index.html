@@ -74,7 +74,7 @@
   #touch.on{ display:block; }
   .pad{ position:absolute; bottom:calc(var(--mg) + env(safe-area-inset-bottom)); pointer-events:none; }
   .actions{ right:var(--mg); display:grid; grid-template-columns:repeat(2,var(--bs)); grid-auto-rows:var(--bs); gap:var(--gp); }
-  .move{ left:var(--mg); display:grid; grid-template-columns:repeat(3,var(--ms)); grid-template-rows:repeat(3,var(--ms));
+  .move{ left:var(--mg); display:grid; grid-template-columns:repeat(3,var(--ms)); grid-template-rows:repeat(2,var(--ms));
     gap:calc(var(--gp) * 0.7); }
   .tbtn{ pointer-events:auto; border:3px solid var(--ink); background:rgba(244,242,236,.82); border-radius:14px;
     display:flex; align-items:center; justify-content:center; font-weight:800; letter-spacing:.02em;
@@ -155,18 +155,17 @@
       <div class="tbtn round" data-act="punch">PUNCH</div>
       <div class="tbtn round" data-act="kick">KICK</div>
     </div>
-    <!-- movement: bottom-left -->
+    <!-- movement: bottom-left (up on top; left / down / right share a row) -->
     <div class="pad move">
       <div class="blank"></div><div class="tbtn" data-dir="up">&#9650;</div><div class="blank"></div>
-      <div class="tbtn" data-dir="left">&#9664;</div><div class="blank"></div><div class="tbtn" data-dir="right">&#9654;</div>
-      <div class="blank"></div><div class="tbtn" data-dir="down">&#9660;</div><div class="blank"></div>
+      <div class="tbtn" data-dir="left">&#9664;</div><div class="tbtn" data-dir="down">&#9660;</div><div class="tbtn" data-dir="right">&#9654;</div>
     </div>
   </div>
 </div>
 
 <script>
 /* ============================================================================
-   SITE BRAWL — single-file stick-figure fighting platformer
+   SITE BRAWL - single-file stick-figure fighting platformer
    Plain HTML/CSS/JS canvas game. Works standalone (GitHub Pages / static host).
    Optional cross-device 2P when served by the companion server.js relay.
 ============================================================================ */
@@ -274,6 +273,7 @@ const Snd = (function(){
     die(){ tone(300,.22,'sawtooth',.18,70); noise(.12,.14,200); },
     hurt(){ tone(200,.18,'sawtooth',.2,80); },
     pickup(){ tone(520,.09,'sine',.22); setTimeout(()=>tone(780,.12,'sine',.22),70); },
+    power(){ tone(523,.07,'square',.2); setTimeout(()=>tone(784,.07,'square',.2),60); setTimeout(()=>tone(1047,.16,'square',.2),120); },
     wave(){ tone(440,.12,'triangle',.2); setTimeout(()=>tone(660,.16,'triangle',.2),120); },
     jump(){ tone(320,.1,'sine',.12,520); },
     resume(){ const a=ctxx(); if(a&&a.state==='suspended') a.resume(); },
@@ -369,7 +369,7 @@ function makePlayer(team, gender){
     hp:100, maxHp:100, alive:true,
     state:'idle', animTime:0,
     atkTimer:0, atkDur:0, atkType:null, atkHit:null,
-    hurtTimer:0, invuln:0, flashTimer:0 };
+    hurtTimer:0, invuln:0, flashTimer:0, powerTimer:0 };
 }
 function makeEnemy(variant, x, y){
   const base = { kind:'enemy', id:_id++, variant, color:BLACK, gender: Math.random()<.5?'male':'female',
@@ -383,7 +383,7 @@ function makeEnemy(variant, x, y){
   else { base.h=64; base.lw=3.2; base.speed=1.7; base.dmg=5; base.atkEvery=1.0; base.mass=1; }
   return base;
 }
-function makeDrop(x,y){ return { id:_id++, x, y, vy:-3, type:'hp', amount:10, ttl:13, settled:false }; }
+function makeDrop(x,y,type){ type=type||'hp'; return { id:_id++, x, y, vy:-3, type, amount:25, ttl:(type==='power'?15:13), settled:false }; }
 function makeFx(x,y,text,color){ return { x, y, text, color, life:0.7 }; }
 
 /* ---------- Game state ---------- */
@@ -434,6 +434,7 @@ function updatePlayer(p, ctrl, dt){
   if(p.invuln>0) p.invuln-=dt;
   if(p.hurtTimer>0) p.hurtTimer-=dt;
   if(p.flashTimer>0) p.flashTimer-=dt;
+  if(p.powerTimer>0) p.powerTimer-=dt;
   const attacking = p.atkTimer < p.atkDur && p.atkType;
   const move = (ctrl.right?1:0) - (ctrl.left?1:0);
 
@@ -449,7 +450,7 @@ function updatePlayer(p, ctrl, dt){
     if(Math.abs(move)>0 && !ladderAt(p.x,p.y-2)){ p.climbing=false; }
   } else {
     if(!attacking){
-      p.vx = move*P_SPEED;
+      p.vx = move*(p.powerTimer>0 ? P_SPEED*1.7 : P_SPEED);
       if(move!==0) p.facing = move>0?1:-1;
     } else { p.vx *= 0.6; }
     // enter ladder
@@ -490,7 +491,7 @@ function resolvePlayerHit(p){
     const inFront = dx*p.facing > -16;        // in the facing direction (small back tolerance)
     if(inFront && Math.abs(dx) < reach && Math.abs(e.y - p.y) < 62){
       p.atkHit[e.id]=true;
-      e.hits -= 1;
+      e.hits -= (p.powerTimer>0) ? 99 : (p.atkType==='punch' ? 2 : 1);  // punch counts double; power orb = insta-kill
       const mass = e.mass || 1;
       if(p.atkType==='kick'){
         // strong launch: hard horizontal shove + upward pop + longer stun
@@ -578,7 +579,9 @@ function killEnemy(e, by){
   G.score += pts;
   Snd.die();
   G.fx.push(makeFx(e.x, e.y-e.h-8, '+'+pts, '#8a857a'));
-  if(Math.random()<0.30){ G.drops.push(makeDrop(e.x, e.y-e.h*0.6)); }
+  const roll=Math.random();
+  if(roll<0.12){ G.drops.push(makeDrop(e.x, e.y-e.h*0.6, 'power')); }       // rare blue power orb
+  else if(roll<0.42){ G.drops.push(makeDrop(e.x, e.y-e.h*0.6, 'hp')); }     // +25 HP drop
 }
 
 /* ---------- Waves ---------- */
@@ -617,12 +620,15 @@ function updateDrops(dt){
         if(d.x>=p.x1 && d.x<=p.x2 && d.y>=p.y-14 && d.vy>=0){ d.y=p.y-14; d.vy=0; d.settled=true; } }
     }
     d.ttl-=dt;
-    for(const pl of G.players){ if(!pl.alive) continue;
-      if(Math.abs(pl.x-d.x)<28 && Math.abs((pl.y-30)-d.y)<46 && d.ttl>0 && pl.hp<pl.maxHp){
+    for(const pl of G.players){ if(!pl.alive || d.ttl<=0) continue;
+      const near = Math.abs(pl.x-d.x)<30 && Math.abs((pl.y-30)-d.y)<48;
+      if(!near) continue;
+      if(d.type==='power'){
+        pl.powerTimer = 20; d.ttl=-1; Snd.power();
+        G.fx.push(makeFx(pl.x, pl.y-pl.h-6, 'POWER!', '#2f6fe0'));
+      } else if(pl.hp<pl.maxHp){          // HP orb only when not full; otherwise left on the ground
         pl.hp=Math.min(pl.maxHp, pl.hp+d.amount); d.ttl=-1; Snd.pickup();
         G.fx.push(makeFx(pl.x, pl.y-pl.h-6, '+'+d.amount, '#2faa55'));
-      } else if(Math.abs(pl.x-d.x)<28 && Math.abs((pl.y-30)-d.y)<46 && d.ttl>0 && pl.hp>=pl.maxHp){
-        // still consume if full? keep it for later — leave it
       }
     }
   }
@@ -745,6 +751,16 @@ function limb(ox,oy,angle,len,facing){
 function drawStick(a, opt){
   opt=opt||{};
   const fx=a.x, fy=a.y, H=opt.h||a.h, dir=a.facing, t=a.animTime||0;
+  // power-up aura (pulsing electric ring) for a powered player
+  if(a.powerTimer>0){
+    const pulse=1+Math.sin(Date.now()*0.013)*0.1;
+    ctx.save();
+    ctx.globalAlpha=0.16; ctx.fillStyle='#19a7d6';
+    ctx.beginPath(); ctx.ellipse(fx, fy-H*0.45, H*0.4*pulse, H*0.6*pulse, 0, 0, Math.PI*2); ctx.fill();
+    ctx.globalAlpha=0.55; ctx.strokeStyle='#19a7d6'; ctx.lineWidth=2.5;
+    ctx.beginPath(); ctx.ellipse(fx, fy-H*0.45, H*0.4*pulse, H*0.6*pulse, 0, 0, Math.PI*2); ctx.stroke();
+    ctx.restore();
+  }
   const color = (a.flashTimer&&a.flashTimer>0 && Math.floor(a.flashTimer*20)%2===0)? '#d83b34' : a.color;
   ctx.strokeStyle=color; ctx.lineWidth=a.lw||3.2; ctx.lineCap='round'; ctx.lineJoin='round';
   const hipY=fy-H*0.46, shY=fy-H*0.82, headR=H*0.13, headY=shY-headR*1.15;
@@ -809,6 +825,19 @@ function drawDrop(d){
   const x=d.x, y=d.y+bob;
   const blink = d.ttl<3 && Math.floor(d.ttl*6)%2===0;
   if(blink) return;
+  if(d.type==='power'){
+    const pulse = 1 + Math.sin(Date.now()*0.012)*0.14;
+    ctx.globalAlpha=0.5; ctx.strokeStyle='#2f6fe0'; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.arc(x,y,16*pulse,0,Math.PI*2); ctx.stroke(); ctx.globalAlpha=1;
+    ctx.fillStyle='#2f6fe0'; ctx.strokeStyle=INK; ctx.lineWidth=2.5;
+    ctx.beginPath(); ctx.arc(x,y,12,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,0.9)';
+    ctx.beginPath(); ctx.arc(x-3.5,y-3.5,3.6,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(x+3,y+2); ctx.lineTo(x+7,y+6); ctx.stroke();
+    return;
+  }
+  // HP cross (green)
   ctx.fillStyle='#2faa55'; ctx.strokeStyle=INK; ctx.lineWidth=2.5;
   ctx.beginPath(); ctx.arc(x,y,13,0,Math.PI*2); ctx.fill(); ctx.stroke();
   ctx.strokeStyle='#f4f2ec'; ctx.lineWidth=3.2; ctx.lineCap='round';
@@ -820,9 +849,19 @@ function drawHUDScreen(){
   ctx.setTransform(dpr,0,0,dpr,0,0);
   const W=cw, H=ch, mn=Math.min(W,H);
   const pad = Math.max(12, mn*0.03);
-  const barW = Math.min(300, W*0.42), barH = Math.max(13, mn*0.024);
+  const barH = Math.max(13, mn*0.024);
   const top = pad*0.5 + 6;
   const fs = Math.max(12, Math.min(15, W*0.02));
+  const wfs = Math.max(18, Math.min(28, W*0.028));
+  const sfs = Math.max(11, wfs*0.55);
+  // reserve horizontal room for the centred WAVE/SCORE so the HP bars never overlap it
+  ctx.font='800 '+wfs+'px Helvetica, Arial, sans-serif';
+  const w1=ctx.measureText('WAVE '+G.wave).width;
+  ctx.font='700 '+sfs+'px Helvetica, Arial, sans-serif';
+  const w2=ctx.measureText('SCORE '+G.score+'   \u00B7   BEST '+G.best).width;
+  const centerW = Math.max(w1, w2) + pad*2;
+  const barW = Math.max(54, Math.min(300, (W - centerW)/2 - pad*1.5));
+
   const drawBar=(p, align)=>{
     const bx = align==='left'? pad : W - pad - barW;
     ctx.fillStyle='rgba(21,20,15,0.08)'; ctx.fillRect(bx,top,barW,barH);
@@ -830,19 +869,22 @@ function drawHUDScreen(){
     ctx.strokeStyle=INK; ctx.lineWidth=2.5; ctx.strokeRect(bx,top,barW,barH);
     ctx.fillStyle=INK; ctx.font='700 '+fs+'px Helvetica, Arial, sans-serif';
     ctx.textAlign=align==='left'?'left':'right';
-    const label = (p.team==='p1'?'P1':'P2')+(p.alive?'':' — DOWN')+'   '+Math.max(0,Math.round(p.hp))+' HP';
+    const label = (p.team==='p1'?'P1':'P2')+(p.alive?'':' \u2014 DOWN')+'   '+Math.max(0,Math.round(p.hp))+' HP';
     ctx.fillText(label, align==='left'?bx:bx+barW, top+barH+fs+3);
+    if(p.powerTimer>0){
+      ctx.fillStyle='#1f8ad0'; ctx.font='800 '+(fs*0.95)+'px Helvetica, Arial, sans-serif';
+      ctx.fillText('POWER '+Math.ceil(p.powerTimer)+'s', align==='left'?bx:bx+barW, top+barH+fs*2.2+3);
+    }
   };
   const p1=G.players.find(p=>p.team==='p1'); if(p1) drawBar(p1,'left');
   const p2=G.players.find(p=>p.team==='p2'); if(p2) drawBar(p2,'right');
 
   // wave + score centre
   ctx.textAlign='center'; ctx.fillStyle=INK;
-  const wfs = Math.max(18, Math.min(28, W*0.028));
   ctx.font='800 '+wfs+'px Helvetica, Arial, sans-serif';
   ctx.fillText('WAVE '+G.wave, W/2, top+wfs*0.85);
-  ctx.font='700 '+Math.max(11,wfs*0.55)+'px Helvetica, Arial, sans-serif'; ctx.fillStyle='#8a857a';
-  ctx.fillText('SCORE '+G.score+'   ·   BEST '+G.best, W/2, top+wfs*1.6);
+  ctx.font='700 '+sfs+'px Helvetica, Arial, sans-serif'; ctx.fillStyle='#8a857a';
+  ctx.fillText('SCORE '+G.score+'   \u00B7   BEST '+G.best, W/2, top+wfs*1.6);
 
   // wave banner
   if(G.waveBanner>0){
@@ -860,9 +902,9 @@ function drawHUDScreen(){
     ctx.textAlign='center'; ctx.fillStyle=INK;
     const gfs=Math.max(22, Math.min(40, W*0.05));
     ctx.font='800 '+gfs+'px Helvetica, Arial, sans-serif';
-    ctx.fillText('Waiting for Player 1…', W/2, H/2-4);
+    ctx.fillText('Waiting for Player 1\u2026', W/2, H/2-4);
     ctx.font='700 '+Math.max(12,gfs*0.42)+'px Helvetica, Arial, sans-serif'; ctx.fillStyle='#8a857a';
-    ctx.fillText('You are Player 2 (blue) — host starts the fight.', W/2, H/2+gfs*0.85);
+    ctx.fillText('You are Player 2 (blue) \u2014 host starts the fight.', W/2, H/2+gfs*0.85);
   }
 }
 
@@ -931,7 +973,7 @@ function gameOver(){
 }
 function togglePause(){
   if(!G.running||G.over) return; G.paused=!G.paused;
-  document.getElementById('pauseBtn').textContent = G.paused?'▶':'II';
+  document.getElementById('pauseBtn').textContent = G.paused?'\u25B6':'II';
 }
 
 /* ---------- Same-screen P2 join ---------- */
@@ -985,12 +1027,12 @@ document.getElementById('againBtn').addEventListener('click', ()=>{
   startGame(); addPlayer(team, g);
 });
 document.getElementById('muteBtn').addEventListener('click', ()=>{
-  const m=Snd.toggle(); document.getElementById('muteBtn').textContent=m?'×':'♪';
+  const m=Snd.toggle(); document.getElementById('muteBtn').textContent=m?'\u00D7':'\u266A';
   document.getElementById('muteBtn').style.opacity=m?0.5:1;
 });
 document.getElementById('pauseBtn').addEventListener('click', togglePause);
 window.addEventListener('blur', ()=>{ if(G.running&&!G.over) G.paused=true,
-  document.getElementById('pauseBtn').textContent='▶'; });
+  document.getElementById('pauseBtn').textContent='\u25B6'; });
 
 /* draw the little figures on the select cards */
 function drawCardFigure(cv, gender, team){
@@ -1020,13 +1062,13 @@ document.querySelectorAll('canvas[data-fig]').forEach(cv=>{
 });
 
 /* ============================================================================
-   NET — optional cross-device 2P via companion server.js relay.
+   NET - optional cross-device 2P via companion server.js relay.
    Standalone (no relay) -> mode stays 'local'. Never blocks the game.
 ============================================================================ */
 function notifyHost(text, transient){
   const titleVisible = !document.getElementById('titleScreen').classList.contains('hidden');
   const note=document.getElementById('joinNote');
-  if(titleVisible && note){ note.innerHTML='&#10003; '+text; note.classList.remove('hidden'); }
+  if(titleVisible && note){ note.innerHTML='\u2713 '+text; note.classList.remove('hidden'); }
   const badge=document.getElementById('netbadge');
   if(badge){ badge.style.display='block'; badge.textContent=text;
     if(transient) setTimeout(()=>{ badge.style.display='none'; }, 3200); }
@@ -1039,7 +1081,7 @@ const Net = {
     let url;
     try{
       const proto = location.protocol==='https:'?'wss':'ws';
-      if(!location.host) return; // file:// — no relay
+      if(!location.host) return; // file:// - no relay
       url = proto+'://'+location.host+'/ws';
     }catch(e){ return; }
     let settled=false;
@@ -1056,11 +1098,11 @@ const Net = {
         this.role = m.role;                 // 'p1' or 'p2'
         this.mode = m.role==='p1' ? 'host' : 'guest';
         badge.style.display='block';
-        badge.textContent = (this.mode==='host'?'Hosting · you are P1 (red)':'Joined · you are P2 (blue)');
-        if(this.role==='p2'){ document.getElementById('selWho').innerHTML='Player <b class="b" style="color:#2f6fe0">2</b> &middot; choose your fighter'; }
+        badge.textContent = (this.mode==='host'?'Hosting \u00B7 you are P1 (red)':'Joined \u00B7 you are P2 (blue)');
+        if(this.role==='p2'){ document.getElementById('selWho').innerHTML='Player <b class="b" style="color:#2f6fe0">2</b> \u00B7 choose your fighter'; }
         setTimeout(()=>{ badge.style.display='none'; }, 4000);
       } else if(m.t==='peer-join'){
-        notifyHost('Player 2 connected — choosing a fighter…');
+        notifyHost('Player 2 connected \u2014 choosing a fighter\u2026');
       } else if(m.t==='peer-left'){
         if(this.mode==='host'){ const p2=G.players.find(p=>p.team==='p2'); if(p2){ p2.alive=false; } }
         this.pendingP2=null;
@@ -1071,7 +1113,7 @@ const Net = {
           if(G.running){ addPlayer('p2', m.gender); this.send({t:'started'}); this.pendingP2=null;
             notifyHost('Player 2 ('+m.gender+') joined the fight!', true);
           } else {
-            notifyHost('Player 2 is ready ('+m.gender+') — pick your fighter to start!');
+            notifyHost('Player 2 is ready ('+m.gender+') \u2014 pick your fighter to start!');
           }
         }
       } else if(m.t==='input'){         // host receives guest input
@@ -1099,9 +1141,9 @@ const Net = {
   },
   maybeSendSnapshot(ts){ if(ts-this._lastSent<45) return; this._lastSent=ts;
     this.send({ t:'snapshot', w:G.wave, sc:G.score, bn:G.waveBanner, over:G.over,
-      P:G.players.map(p=>({t:p.team,g:p.gender,x:Math.round(p.x),y:Math.round(p.y),f:p.facing,s:p.state,hp:Math.round(p.hp),a:p.alive,at:p.animTime.toFixed(2)})),
+      P:G.players.map(p=>({t:p.team,g:p.gender,x:Math.round(p.x),y:Math.round(p.y),f:p.facing,s:p.state,hp:Math.round(p.hp),a:p.alive,at:p.animTime.toFixed(2),pw:Math.round(p.powerTimer||0)})),
       E:G.enemies.map(e=>({v:e.variant,g:e.gender,x:Math.round(e.x),y:Math.round(e.y),f:e.facing,s:e.state,h:e.hits,at:e.animTime.toFixed(2)})),
-      D:G.drops.map(d=>({x:Math.round(d.x),y:Math.round(d.y),ttl:d.ttl}))
+      D:G.drops.map(d=>({x:Math.round(d.x),y:Math.round(d.y),ttl:d.ttl,ty:d.type}))
     });
   }
 };
@@ -1109,9 +1151,9 @@ function applySnapshot(){
   const s=Net.lastSnap; if(!s) return;
   G.wave=s.w; G.score=s.sc; G.waveBanner=s.bn; G.over=s.over;
   G.players = s.P.map(p=>({ kind:'player', team:p.t, color:TEAM[p.t], gender:p.g, x:p.x,y:p.y,facing:p.f,
-    state:p.s, hp:p.hp, maxHp:100, alive:p.a, h:66, lw:3.4, fillHead:false, animTime:+p.at, hurtTimer:0, flashTimer:0 }));
+    state:p.s, hp:p.hp, maxHp:100, alive:p.a, h:66, lw:3.4, fillHead:false, animTime:+p.at, hurtTimer:0, flashTimer:0, powerTimer:(p.pw||0) }));
   G.enemies = s.E.map(e=>{ const m=makeEnemy(e.v, e.x, e.y); m.gender=e.g; m.facing=e.f; m.state=e.s; m.hits=e.h; m.animTime=+e.at; return m; });
-  G.drops = s.D.map(d=>({x:d.x,y:d.y,ttl:d.ttl,settled:true,type:'hp',amount:10}));
+  G.drops = s.D.map(d=>({x:d.x,y:d.y,ttl:d.ttl,settled:true,type:(d.ty||'hp'),amount:25}));
   if(G.over) gameOverGuest();
 }
 let _guestOver=false;
@@ -1128,5 +1170,4 @@ try{ Net.connect(); }catch(e){}
 </script>
 </body>
 </html>
-
 
