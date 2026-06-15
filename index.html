@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<title>Site Brawl â€” Stick Figure Fighter</title>
+<title>Site Brawl &mdash; Stick Figure Fighter</title>
 <style>
   :root{ --ink:#15140f; --paper:#f4f2ec; --red:#d83b34; --blue:#2f6fe0; --green:#2faa55; }
   *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
@@ -91,21 +91,21 @@
 <div id="wrap">
   <canvas id="game"></canvas>
 
-  <div id="netbadge" class="net">connectingâ€¦</div>
+  <div id="netbadge" class="net">connecting&hellip;</div>
 
   <div class="corner">
-    <button class="icobtn" id="muteBtn" title="Sound">â™ª</button>
+    <button class="icobtn" id="muteBtn" title="Sound">&#9834;</button>
     <button class="icobtn hidden" id="pauseBtn" title="Pause">II</button>
   </div>
 
   <!-- TITLE / SELECT -->
   <div class="screen" id="titleScreen">
     <div class="panel">
-      <p class="kicker">Endless Â· Construction Site</p>
+      <p class="kicker">Endless &middot; Construction Site</p>
       <h1><span class="red">SITE</span> <span class="blue">BRAWL</span></h1>
       <p class="sub">Black stick figures swarm the scaffolding. Punch and kick your way through
         endless waves. Pick your fighter to drop in.</p>
-      <p class="who" id="selWho">Player <b class="r">1</b> Â· choose your fighter</p>
+      <p class="who" id="selWho">Player <b class="r">1</b> &middot; choose your fighter</p>
       <div class="picks">
         <div class="pick" data-gender="male"><canvas width="168" height="208" data-fig="male"></canvas><span>Male</span></div>
         <div class="pick" data-gender="female"><canvas width="168" height="208" data-fig="female"></canvas><span>Female</span></div>
@@ -124,7 +124,7 @@
   <!-- P2 JOIN PROMPT (same-screen) -->
   <div class="screen hidden" id="joinScreen">
     <div class="panel">
-      <p class="who">Player <b class="b">2</b> Â· choose your fighter</p>
+      <p class="who">Player <b class="b">2</b> &middot; choose your fighter</p>
       <div class="picks">
         <div class="pick" data-gender="male" data-p="2"><canvas width="168" height="208" data-fig="male" data-team="blue"></canvas><span>Male</span></div>
         <div class="pick" data-gender="female" data-p="2"><canvas width="168" height="208" data-fig="female" data-team="blue"></canvas><span>Female</span></div>
@@ -157,16 +157,16 @@
     </div>
     <!-- movement: bottom-left -->
     <div class="pad move">
-      <div class="blank"></div><div class="tbtn" data-dir="up">â–²</div><div class="blank"></div>
-      <div class="tbtn" data-dir="left">â—€</div><div class="blank"></div><div class="tbtn" data-dir="right">â–¶</div>
-      <div class="blank"></div><div class="tbtn" data-dir="down">â–¼</div><div class="blank"></div>
+      <div class="blank"></div><div class="tbtn" data-dir="up">&#9650;</div><div class="blank"></div>
+      <div class="tbtn" data-dir="left">&#9664;</div><div class="blank"></div><div class="tbtn" data-dir="right">&#9654;</div>
+      <div class="blank"></div><div class="tbtn" data-dir="down">&#9660;</div><div class="blank"></div>
     </div>
   </div>
 </div>
 
 <script>
 /* ============================================================================
-   SITE BRAWL â€” single-file stick-figure fighting platformer
+   SITE BRAWL — single-file stick-figure fighting platformer
    Plain HTML/CSS/JS canvas game. Works standalone (GitHub Pages / static host).
    Optional cross-device 2P when served by the companion server.js relay.
 ============================================================================ */
@@ -622,7 +622,7 @@ function updateDrops(dt){
         pl.hp=Math.min(pl.maxHp, pl.hp+d.amount); d.ttl=-1; Snd.pickup();
         G.fx.push(makeFx(pl.x, pl.y-pl.h-6, '+'+d.amount, '#2faa55'));
       } else if(Math.abs(pl.x-d.x)<28 && Math.abs((pl.y-30)-d.y)<46 && d.ttl>0 && pl.hp>=pl.maxHp){
-        // still consume if full? keep it for later â€” leave it
+        // still consume if full? keep it for later — leave it
       }
     }
   }
@@ -830,7 +830,7 @@ function drawHUDScreen(){
     ctx.strokeStyle=INK; ctx.lineWidth=2.5; ctx.strokeRect(bx,top,barW,barH);
     ctx.fillStyle=INK; ctx.font='700 '+fs+'px Helvetica, Arial, sans-serif';
     ctx.textAlign=align==='left'?'left':'right';
-    const label = (p.team==='p1'?'P1':'P2')+(p.alive?'':' â€” DOWN')+'   '+Math.max(0,Math.round(p.hp))+' HP';
+    const label = (p.team==='p1'?'P1':'P2')+(p.alive?'':' — DOWN')+'   '+Math.max(0,Math.round(p.hp))+' HP';
     ctx.fillText(label, align==='left'?bx:bx+barW, top+barH+fs+3);
   };
   const p1=G.players.find(p=>p.team==='p1'); if(p1) drawBar(p1,'left');
@@ -842,7 +842,7 @@ function drawHUDScreen(){
   ctx.font='800 '+wfs+'px Helvetica, Arial, sans-serif';
   ctx.fillText('WAVE '+G.wave, W/2, top+wfs*0.85);
   ctx.font='700 '+Math.max(11,wfs*0.55)+'px Helvetica, Arial, sans-serif'; ctx.fillStyle='#8a857a';
-  ctx.fillText('SCORE '+G.score+'   Â·   BEST '+G.best, W/2, top+wfs*1.6);
+  ctx.fillText('SCORE '+G.score+'   ·   BEST '+G.best, W/2, top+wfs*1.6);
 
   // wave banner
   if(G.waveBanner>0){
@@ -860,9 +860,9 @@ function drawHUDScreen(){
     ctx.textAlign='center'; ctx.fillStyle=INK;
     const gfs=Math.max(22, Math.min(40, W*0.05));
     ctx.font='800 '+gfs+'px Helvetica, Arial, sans-serif';
-    ctx.fillText('Waiting for Player 1â€¦', W/2, H/2-4);
+    ctx.fillText('Waiting for Player 1…', W/2, H/2-4);
     ctx.font='700 '+Math.max(12,gfs*0.42)+'px Helvetica, Arial, sans-serif'; ctx.fillStyle='#8a857a';
-    ctx.fillText('You are Player 2 (blue) â€” host starts the fight.', W/2, H/2+gfs*0.85);
+    ctx.fillText('You are Player 2 (blue) — host starts the fight.', W/2, H/2+gfs*0.85);
   }
 }
 
@@ -931,7 +931,7 @@ function gameOver(){
 }
 function togglePause(){
   if(!G.running||G.over) return; G.paused=!G.paused;
-  document.getElementById('pauseBtn').textContent = G.paused?'â–¶':'II';
+  document.getElementById('pauseBtn').textContent = G.paused?'▶':'II';
 }
 
 /* ---------- Same-screen P2 join ---------- */
@@ -985,12 +985,12 @@ document.getElementById('againBtn').addEventListener('click', ()=>{
   startGame(); addPlayer(team, g);
 });
 document.getElementById('muteBtn').addEventListener('click', ()=>{
-  const m=Snd.toggle(); document.getElementById('muteBtn').textContent=m?'Ã—':'â™ª';
+  const m=Snd.toggle(); document.getElementById('muteBtn').textContent=m?'×':'♪';
   document.getElementById('muteBtn').style.opacity=m?0.5:1;
 });
 document.getElementById('pauseBtn').addEventListener('click', togglePause);
 window.addEventListener('blur', ()=>{ if(G.running&&!G.over) G.paused=true,
-  document.getElementById('pauseBtn').textContent='â–¶'; });
+  document.getElementById('pauseBtn').textContent='▶'; });
 
 /* draw the little figures on the select cards */
 function drawCardFigure(cv, gender, team){
@@ -1020,13 +1020,13 @@ document.querySelectorAll('canvas[data-fig]').forEach(cv=>{
 });
 
 /* ============================================================================
-   NET â€” optional cross-device 2P via companion server.js relay.
+   NET — optional cross-device 2P via companion server.js relay.
    Standalone (no relay) -> mode stays 'local'. Never blocks the game.
 ============================================================================ */
 function notifyHost(text, transient){
   const titleVisible = !document.getElementById('titleScreen').classList.contains('hidden');
   const note=document.getElementById('joinNote');
-  if(titleVisible && note){ note.innerHTML='âœ“ '+text; note.classList.remove('hidden'); }
+  if(titleVisible && note){ note.innerHTML='&#10003; '+text; note.classList.remove('hidden'); }
   const badge=document.getElementById('netbadge');
   if(badge){ badge.style.display='block'; badge.textContent=text;
     if(transient) setTimeout(()=>{ badge.style.display='none'; }, 3200); }
@@ -1039,7 +1039,7 @@ const Net = {
     let url;
     try{
       const proto = location.protocol==='https:'?'wss':'ws';
-      if(!location.host) return; // file:// â€” no relay
+      if(!location.host) return; // file:// — no relay
       url = proto+'://'+location.host+'/ws';
     }catch(e){ return; }
     let settled=false;
@@ -1056,11 +1056,11 @@ const Net = {
         this.role = m.role;                 // 'p1' or 'p2'
         this.mode = m.role==='p1' ? 'host' : 'guest';
         badge.style.display='block';
-        badge.textContent = (this.mode==='host'?'Hosting Â· you are P1 (red)':'Joined Â· you are P2 (blue)');
-        if(this.role==='p2'){ document.getElementById('selWho').innerHTML='Player <b class="b" style="color:#2f6fe0">2</b> Â· choose your fighter'; }
+        badge.textContent = (this.mode==='host'?'Hosting · you are P1 (red)':'Joined · you are P2 (blue)');
+        if(this.role==='p2'){ document.getElementById('selWho').innerHTML='Player <b class="b" style="color:#2f6fe0">2</b> &middot; choose your fighter'; }
         setTimeout(()=>{ badge.style.display='none'; }, 4000);
       } else if(m.t==='peer-join'){
-        notifyHost('Player 2 connected â€” choosing a fighterâ€¦');
+        notifyHost('Player 2 connected — choosing a fighter…');
       } else if(m.t==='peer-left'){
         if(this.mode==='host'){ const p2=G.players.find(p=>p.team==='p2'); if(p2){ p2.alive=false; } }
         this.pendingP2=null;
@@ -1071,7 +1071,7 @@ const Net = {
           if(G.running){ addPlayer('p2', m.gender); this.send({t:'started'}); this.pendingP2=null;
             notifyHost('Player 2 ('+m.gender+') joined the fight!', true);
           } else {
-            notifyHost('Player 2 is ready ('+m.gender+') â€” pick your fighter to start!');
+            notifyHost('Player 2 is ready ('+m.gender+') — pick your fighter to start!');
           }
         }
       } else if(m.t==='input'){         // host receives guest input
@@ -1128,4 +1128,5 @@ try{ Net.connect(); }catch(e){}
 </script>
 </body>
 </html>
+
 
