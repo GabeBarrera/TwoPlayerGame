@@ -67,10 +67,10 @@
 
   /* ---- Touch controls (scale with viewport so they never overlap/overflow) ---- */
   #touch{ position:absolute; inset:0; z-index:25; pointer-events:none; display:none;
-    --bs:clamp(46px, 11.5vmin, 78px);   /* action button size  */
-    --ms:clamp(42px, 9.5vmin, 66px);    /* move button size    */
-    --gp:clamp(6px, 1.6vmin, 12px);     /* gap between buttons */
-    --mg:clamp(10px, 2.6vmin, 20px); }  /* screen-edge margin  */
+    --bs:clamp(52px, 13.5vmin, 86px);   /* action button size  */
+    --ms:clamp(48px, 11.5vmin, 74px);   /* move button size    */
+    --gp:clamp(6px, 1.7vmin, 13px);     /* gap between buttons */
+    --mg:clamp(8px, 2.4vmin, 18px); }   /* screen-edge margin  */
   #touch.on{ display:block; }
   .pad{ position:absolute; bottom:calc(var(--mg) + env(safe-area-inset-bottom)); pointer-events:none; }
   .actions{ right:var(--mg); display:grid; grid-template-columns:repeat(2,var(--bs)); grid-auto-rows:var(--bs); gap:var(--gp); }
@@ -201,14 +201,50 @@ const FLOOR_Y = 660;
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 let cw=0, ch=0, scale=1, offX=0, offY=0, dpr=1;
+const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints>0;
+let useFollowCam=false, viewW=VW, viewH=VH, camX=0, camY=0, camInit=false;
 function resize(){
   dpr = Math.min(window.devicePixelRatio||1, 2);
   cw = window.innerWidth; ch = window.innerHeight;
   canvas.width = Math.round(cw*dpr); canvas.height = Math.round(ch*dpr);
-  scale = Math.min(cw/VW, ch/VH);
-  offX = (cw - VW*scale)/2; offY = (ch - VH*scale)/2;
+  // On a touch device that isn't clearly landscape, use a portrait follow-camera:
+  // fill the screen height with the full world height and scroll horizontally
+  // (and vertically if needed) to keep the player centred.
+  useFollowCam = isTouch && (cw / ch) < 1.5;
+  if(useFollowCam){
+    scale = ch / VH;            // world height exactly fills the screen height
+    viewH = ch / scale;         // == VH
+    viewW = cw / scale;         // world units visible horizontally (a slice)
+    offX = 0; offY = 0;
+  } else {
+    scale = Math.min(cw/VW, ch/VH);   // fit the whole world, letterboxed
+    offX = (cw - VW*scale)/2; offY = (ch - VH*scale)/2;
+    viewW = VW; viewH = VH; camX = 0; camY = 0;
+  }
+  camInit = false;
 }
 window.addEventListener('resize', resize); resize();
+window.addEventListener('orientationchange', ()=>setTimeout(resize,120));
+
+function cameraTarget(){
+  const team = Net.role==='p2' ? 'p2' : 'p1';
+  return G.players.find(p=>p.team===team && p.alive) || G.players.find(p=>p.alive) || G.players[0] || null;
+}
+function updateCamera(){
+  if(!useFollowCam){ camX=0; camY=0; return; }
+  const me = cameraTarget();
+  const maxX = Math.max(0, VW - viewW), maxY = Math.max(0, VH - viewH);
+  let tx = me ? me.x - viewW/2 : VW/2 - viewW/2;
+  let ty = me ? (me.y - me.h*0.4) - viewH/2 : 0;
+  tx = Math.max(0, Math.min(maxX, tx));
+  ty = Math.max(0, Math.min(maxY, ty));
+  // centre the world if it is narrower/shorter than the view
+  if(viewW >= VW) tx = (VW - viewW)/2;
+  if(viewH >= VH) ty = (VH - viewH)/2;
+  if(!camInit){ camX=tx; camY=ty; camInit=true; return; }
+  camX += (tx - camX) * 0.14;
+  camY += (ty - camY) * 0.14;
+}
 
 /* ---------- Audio (WebAudio, generated) ---------- */
 const Snd = (function(){
@@ -253,7 +289,6 @@ function newCtrl(){ return { left:false,right:false,up:false,down:false,
   jumpQ:false, punchQ:false, kickQ:false }; }
 const ctrlP1 = newCtrl(), ctrlP2 = newCtrl();
 
-const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints>0;
 const forceMobileUI = isTouch && window.innerWidth < 880;
 
 document.addEventListener('keydown', e=>{
@@ -342,10 +377,10 @@ function makeEnemy(variant, x, y){
     onGround:false, climbing:false, ladder:null,
     hits:5, hitsMax:5, alive:true, state:'idle', animTime:Math.random()*6,
     atkCD:0, windup:0, hurtTimer:0, target:null };
-  if(variant==='fast'){ base.h=52; base.lw=2.4; base.speed=2.55; base.dmg=5; base.atkEvery=0.85; }
+  if(variant==='fast'){ base.h=52; base.lw=2.4; base.speed=2.55; base.dmg=5; base.atkEvery=0.85; base.mass=0.7; }
   else if(variant==='tough'){ base.h=82; base.lw=5.2; base.speed=1.05; base.dmg=10; base.atkEvery=1.25;
-    base.hits=9; base.hitsMax=9; }
-  else { base.h=64; base.lw=3.2; base.speed=1.7; base.dmg=5; base.atkEvery=1.0; }
+    base.hits=9; base.hitsMax=9; base.mass=1.9; }
+  else { base.h=64; base.lw=3.2; base.speed=1.7; base.dmg=5; base.atkEvery=1.0; base.mass=1; }
   return base;
 }
 function makeDrop(x,y){ return { id:_id++, x, y, vy:-3, type:'hp', amount:10, ttl:13, settled:false }; }
@@ -455,10 +490,17 @@ function resolvePlayerHit(p){
     const inFront = dx*p.facing > -16;        // in the facing direction (small back tolerance)
     if(inFront && Math.abs(dx) < reach && Math.abs(e.y - p.y) < 62){
       p.atkHit[e.id]=true;
-      e.hits -= 1; e.hurtTimer=0.18;
-      const kb = p.atkType==='kick'?7.5:4;
-      e.vx = p.facing*kb; e.vy = p.atkType==='kick'?-4:-1.5;
-      Snd.hit(); G.shake = Math.max(G.shake, p.atkType==='kick'?6:3);
+      e.hits -= 1;
+      const mass = e.mass || 1;
+      if(p.atkType==='kick'){
+        // strong launch: hard horizontal shove + upward pop + longer stun
+        e.vx = p.facing*16/mass; e.vy = -6.5/mass; e.hurtTimer = 0.45;
+        G.shake = Math.max(G.shake, 8);
+      } else {
+        e.vx = p.facing*4.5/mass; e.vy = -1.5/mass; e.hurtTimer = 0.18;
+        G.shake = Math.max(G.shake, 3);
+      }
+      Snd.hit();
       if(e.hits<=0){ killEnemy(e, p); }
     }
   }
@@ -511,7 +553,7 @@ function updateEnemy(e, dt){
       desiredDir = targetX > e.x+6 ? 1 : (targetX < e.x-6 ? -1 : 0);
       e.vx = desiredDir*e.speed;
       if(desiredDir!==0) e.facing=desiredDir;
-    } else { e.vx*=0.85; }
+    } else { e.vx *= e.onGround ? 0.8 : 0.9; }  // airborne knockback carries; grounded slides to a stop
     applyGravityAndPlatforms(e);
     if(Math.abs(e.vx)>0.3 && e.onGround){ e.state='run'; e.animTime+=0.04+e.speed*0.06; }
     else if(!e.onGround) e.state='jump';
@@ -636,9 +678,13 @@ function clearAndFrame(){
   ctx.save();
   let sx=0, sy=0;
   if(G.shake>0.3){ sx=(Math.random()-0.5)*G.shake; sy=(Math.random()-0.5)*G.shake; }
-  ctx.translate(offX+sx, offY+sy); ctx.scale(scale,scale);
-  // clip to world
-  ctx.beginPath(); ctx.rect(0,0,VW,VH); ctx.clip();
+  if(useFollowCam){
+    ctx.translate(sx, sy); ctx.scale(scale,scale); ctx.translate(-camX, -camY);
+    ctx.beginPath(); ctx.rect(camX, camY, viewW, viewH); ctx.clip();
+  } else {
+    ctx.translate(offX+sx, offY+sy); ctx.scale(scale,scale);
+    ctx.beginPath(); ctx.rect(0,0,VW,VH); ctx.clip();
+  }
 }
 function drawWorld(){
   // paper
@@ -769,61 +815,71 @@ function drawDrop(d){
   ctx.beginPath(); ctx.moveTo(x-6,y); ctx.lineTo(x+6,y); ctx.moveTo(x,y-6); ctx.lineTo(x,y+6); ctx.stroke();
 }
 
-function drawHUD(){
-  // player bars
-  const drawBar=(p, x, align)=>{
-    const w=300, h=18;
-    const bx = align==='left'? x : VW-x-w;
-    ctx.fillStyle='rgba(21,20,15,0.08)'; ctx.fillRect(bx,18,w,h);
-    ctx.fillStyle=p.color; ctx.fillRect(bx,18, w*Math.max(0,p.hp/p.maxHp), h);
-    ctx.strokeStyle=INK; ctx.lineWidth=2.5; ctx.strokeRect(bx,18,w,h);
-    ctx.fillStyle=INK; ctx.font='700 14px Helvetica, Arial, sans-serif';
+function drawHUDScreen(){
+  // drawn in CSS-pixel screen space (NOT affected by the world camera)
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  const W=cw, H=ch, mn=Math.min(W,H);
+  const pad = Math.max(12, mn*0.03);
+  const barW = Math.min(300, W*0.42), barH = Math.max(13, mn*0.024);
+  const top = pad*0.5 + 6;
+  const fs = Math.max(12, Math.min(15, W*0.02));
+  const drawBar=(p, align)=>{
+    const bx = align==='left'? pad : W - pad - barW;
+    ctx.fillStyle='rgba(21,20,15,0.08)'; ctx.fillRect(bx,top,barW,barH);
+    ctx.fillStyle=p.color; ctx.fillRect(bx,top, barW*Math.max(0,p.hp/p.maxHp), barH);
+    ctx.strokeStyle=INK; ctx.lineWidth=2.5; ctx.strokeRect(bx,top,barW,barH);
+    ctx.fillStyle=INK; ctx.font='700 '+fs+'px Helvetica, Arial, sans-serif';
     ctx.textAlign=align==='left'?'left':'right';
     const label = (p.team==='p1'?'P1':'P2')+(p.alive?'':' â€” DOWN')+'   '+Math.max(0,Math.round(p.hp))+' HP';
-    ctx.fillText(label, align==='left'?bx:bx+w, 52);
+    ctx.fillText(label, align==='left'?bx:bx+barW, top+barH+fs+3);
   };
-  const p1=G.players.find(p=>p.team==='p1'); if(p1) drawBar(p1,24,'left');
-  const p2=G.players.find(p=>p.team==='p2'); if(p2) drawBar(p2,24,'right');
+  const p1=G.players.find(p=>p.team==='p1'); if(p1) drawBar(p1,'left');
+  const p2=G.players.find(p=>p.team==='p2'); if(p2) drawBar(p2,'right');
 
-  // wave + score center
+  // wave + score centre
   ctx.textAlign='center'; ctx.fillStyle=INK;
-  ctx.font='800 26px Helvetica, Arial, sans-serif';
-  ctx.fillText('WAVE '+G.wave, VW/2, 40);
-  ctx.font='700 15px Helvetica, Arial, sans-serif'; ctx.fillStyle='#8a857a';
-  ctx.fillText('SCORE '+G.score+'   Â·   BEST '+G.best, VW/2, 62);
+  const wfs = Math.max(18, Math.min(28, W*0.028));
+  ctx.font='800 '+wfs+'px Helvetica, Arial, sans-serif';
+  ctx.fillText('WAVE '+G.wave, W/2, top+wfs*0.85);
+  ctx.font='700 '+Math.max(11,wfs*0.55)+'px Helvetica, Arial, sans-serif'; ctx.fillStyle='#8a857a';
+  ctx.fillText('SCORE '+G.score+'   Â·   BEST '+G.best, W/2, top+wfs*1.6);
 
   // wave banner
   if(G.waveBanner>0){
-    const a=Math.min(1,G.waveBanner*1.5);
-    ctx.globalAlpha=a; ctx.textAlign='center';
-    ctx.fillStyle=INK; ctx.font='800 72px Helvetica, Arial, sans-serif';
-    ctx.fillText('WAVE '+G.wave, VW/2, VH/2-10);
-    ctx.font='700 22px Helvetica, Arial, sans-serif'; ctx.fillStyle='#8a857a';
-    ctx.fillText(G.spawnQueue.length+' incoming', VW/2, VH/2+30);
+    const a=Math.min(1,G.waveBanner*1.5); ctx.globalAlpha=a; ctx.textAlign='center';
+    const bfs=Math.max(40, Math.min(76, W*0.085));
+    ctx.fillStyle=INK; ctx.font='800 '+bfs+'px Helvetica, Arial, sans-serif';
+    ctx.fillText('WAVE '+G.wave, W/2, H/2-4);
+    ctx.font='700 '+Math.max(16,bfs*0.3)+'px Helvetica, Arial, sans-serif'; ctx.fillStyle='#8a857a';
+    ctx.fillText(G.spawnQueue.length+' incoming', W/2, H/2 + bfs*0.5);
     ctx.globalAlpha=1;
+  }
+
+  // guest waiting overlay
+  if(Net.mode==='guest' && !Net.lastSnap && G.running){
+    ctx.textAlign='center'; ctx.fillStyle=INK;
+    const gfs=Math.max(22, Math.min(40, W*0.05));
+    ctx.font='800 '+gfs+'px Helvetica, Arial, sans-serif';
+    ctx.fillText('Waiting for Player 1â€¦', W/2, H/2-4);
+    ctx.font='700 '+Math.max(12,gfs*0.42)+'px Helvetica, Arial, sans-serif'; ctx.fillStyle='#8a857a';
+    ctx.fillText('You are Player 2 (blue) â€” host starts the fight.', W/2, H/2+gfs*0.85);
   }
 }
 
 function render(){
+  updateCamera();
   clearAndFrame();
   drawWorld();
   for(const d of G.drops) drawDrop(d);
   // draw enemies, then players on top
   for(const e of G.enemies) drawStick(e);
   for(const p of G.players){ if(p.alive || p.state==='dead'){ if(!p.alive){ ctx.globalAlpha=0.25;} drawStick(p); ctx.globalAlpha=1; } }
-  // fx text
+  // fx text (world space)
   ctx.textAlign='center';
   for(const f of G.fx){ ctx.globalAlpha=Math.min(1,f.life*2); ctx.fillStyle=f.color;
     ctx.font='800 20px Helvetica, Arial, sans-serif'; ctx.fillText(f.text, f.x, f.y); ctx.globalAlpha=1; }
-  drawHUD();
-  if(Net.mode==='guest' && !Net.lastSnap && G.running){
-    ctx.textAlign='center'; ctx.fillStyle=INK;
-    ctx.font='800 40px Helvetica, Arial, sans-serif';
-    ctx.fillText('Waiting for Player 1â€¦', VW/2, VH/2-6);
-    ctx.font='700 18px Helvetica, Arial, sans-serif'; ctx.fillStyle='#8a857a';
-    ctx.fillText('You are Player 2 (blue). The fight starts when the host begins.', VW/2, VH/2+28);
-  }
-  ctx.restore();
+  ctx.restore();          // leave world/camera transform
+  drawHUDScreen();        // HUD fixed to the screen
 }
 
 /* ---------- Loop ---------- */
