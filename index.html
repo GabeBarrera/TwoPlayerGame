@@ -369,14 +369,14 @@ function makePlayer(team, gender){
     hp:100, maxHp:100, alive:true,
     state:'idle', animTime:0,
     atkTimer:0, atkDur:0, atkType:null, atkHit:null,
-    hurtTimer:0, invuln:0, flashTimer:0, powerTimer:0 };
+    hurtTimer:0, invuln:0, flashTimer:0, powerTimer:0, knockTimer:0, punchArm:0, _secondJab:false };
 }
 function makeEnemy(variant, x, y){
   const base = { kind:'enemy', id:_id++, variant, color:BLACK, gender: Math.random()<.5?'male':'female',
     x, y, vx:0, vy:0, facing:1, fillHead:true,
     onGround:false, climbing:false, ladder:null,
     hits:5, hitsMax:5, alive:true, state:'idle', animTime:Math.random()*6,
-    atkCD:0, windup:0, hurtTimer:0, target:null };
+    atkCD:0, windup:0, hurtTimer:0, target:null, atkAnim:0, atkAnimMax:0.2, atkState:null, punchArm:0 };
   if(variant==='fast'){ base.h=52; base.lw=2.4; base.speed=2.55; base.dmg=5; base.atkEvery=0.85; base.mass=0.7; }
   else if(variant==='tough'){ base.h=82; base.lw=5.2; base.speed=1.05; base.dmg=10; base.atkEvery=1.25;
     base.hits=9; base.hitsMax=9; base.mass=1.9; }
@@ -425,7 +425,9 @@ function startAttack(p, type){
     for(const e of G.enemies){ if(!e.alive) continue; if(Math.abs(e.y-p.y)<60){ const d=Math.abs(e.x-p.x); if(d<nd){ nd=d; near=e; } } }
     if(near && Math.abs(near.x-p.x)>6) p.facing = near.x>p.x?1:-1;
   }
-  p.atkType=type; p.atkTimer=0; p.atkDur = type==='punch'?0.26:0.36; p.atkHit={};
+  if(type==='punch') p.punchArm = p.punchArm?0:1;          // which hand leads the one-two
+  p.atkType=type; p.atkTimer=0; p.atkDur = type==='punch'?0.30:0.24; p.atkHit={};
+  p._secondJab=false;
   p.state=type;
   if(type==='punch') Snd.punch(); else Snd.kick();
 }
@@ -435,6 +437,7 @@ function updatePlayer(p, ctrl, dt){
   if(p.hurtTimer>0) p.hurtTimer-=dt;
   if(p.flashTimer>0) p.flashTimer-=dt;
   if(p.powerTimer>0) p.powerTimer-=dt;
+  if(p.knockTimer>0) p.knockTimer-=dt;
   const attacking = p.atkTimer < p.atkDur && p.atkType;
   const move = (ctrl.right?1:0) - (ctrl.left?1:0);
 
@@ -450,8 +453,11 @@ function updatePlayer(p, ctrl, dt){
     if(Math.abs(move)>0 && !ladderAt(p.x,p.y-2)){ p.climbing=false; }
   } else {
     if(!attacking){
-      p.vx = move*(p.powerTimer>0 ? P_SPEED*1.7 : P_SPEED);
-      if(move!==0) p.facing = move>0?1:-1;
+      if(p.knockTimer>0){ p.vx *= 0.9; }   // knocked back: ride the momentum, no control
+      else {
+        p.vx = move*(p.powerTimer>0 ? P_SPEED*1.7 : P_SPEED);
+        if(move!==0) p.facing = move>0?1:-1;
+      }
     } else { p.vx *= 0.6; }
     // enter ladder
     if((ctrl.up||ctrl.down) && !attacking){
@@ -489,8 +495,11 @@ function updatePlayer(p, ctrl, dt){
   if(p.atkType){
     p.atkTimer += dt;
     const t = p.atkTimer;
-    const active = p.atkType==='punch' ? (t>0.05 && t<0.16) : (t>0.10 && t<0.24);
-    if(active) resolvePlayerHit(p);
+    if(p.atkType==='punch'){
+      // a single click throws two fast jabs â€” one from each hand
+      if(t>=0.15 && !p._secondJab){ p._secondJab=true; p.atkHit={}; p.punchArm = p.punchArm?0:1; Snd.punch(); }
+      if((t>0.04 && t<0.13) || (t>0.19 && t<0.28)) resolvePlayerHit(p);
+    } else if(t>0.06 && t<0.17){ resolvePlayerHit(p); }
     if(p.atkTimer>=p.atkDur){ p.atkType=null; p.state='idle'; }
   }
   // consume edge inputs
@@ -504,7 +513,7 @@ function resolvePlayerHit(p){
     const inFront = dx*p.facing > -16;        // in the facing direction (small back tolerance)
     if(inFront && Math.abs(dx) < reach && Math.abs(e.y - p.y) < 62){
       p.atkHit[e.id]=true;
-      e.hits -= (p.powerTimer>0) ? 99 : (p.atkType==='punch' ? 2 : 1);  // punch counts double; power orb = insta-kill
+      e.hits -= (p.powerTimer>0) ? 99 : 1;  // each jab / kick = 1 hit (the punch lands twice); power orb = insta-kill
       const mass = e.mass || 1;
       if(p.atkType==='kick'){
         // strong launch: hard horizontal shove + upward pop + longer stun
@@ -528,6 +537,7 @@ function updateEnemy(e, dt){
   if(!e.alive) return;
   if(e.hurtTimer>0){ e.hurtTimer-=dt; }
   if(e.atkCD>0) e.atkCD-=dt;
+  if(e.atkAnim>0) e.atkAnim-=dt;
   // pick nearest alive player
   let tgt=null, bd=1e9;
   for(const p of G.players){ if(!p.alive) continue; const d=Math.abs(p.x-e.x)+Math.abs(p.y-e.y)*0.6;
@@ -570,20 +580,38 @@ function updateEnemy(e, dt){
       if(desiredDir!==0) e.facing=desiredDir;
     } else { e.vx *= e.onGround ? 0.8 : 0.9; }  // airborne knockback carries; grounded slides to a stop
     applyGravityAndPlatforms(e);
-    if(Math.abs(e.vx)>0.3 && e.onGround){ e.state='run'; e.animTime+=0.04+e.speed*0.06; }
+    const swinging = e.atkAnim>0;
+    if(swinging){ e.state=e.atkState||'punch'; e.vx*=0.7; }
+    else if(Math.abs(e.vx)>0.3 && e.onGround){ e.state='run'; e.animTime+=0.04+e.speed*0.06; }
     else if(!e.onGround) e.state='jump';
     else { e.state='idle'; e.animTime+=0.04; }
 
-    // attack player in range
+    // attack the player when in range. Heavy 'tough' units hit with big knockback,
+    // and ANY enemy can throw a punch straight up when the player is stomping overhead.
+    const heavy = e.variant==='tough';
+    const overhead = Math.abs(tgt.x-e.x) < e.h*0.45+16 &&
+                     tgt.y < e.y - e.h*0.4 && tgt.y > e.y - e.h - 70;
     const close = Math.abs(tgt.x-e.x) < e.h*0.4+22 && Math.abs(tgt.y-e.y) < 50;
-    if(close && e.atkCD<=0 && !knocked){
-      e.atkCD = e.atkEvery; e.state='punch'; e.animTime=0;
-      if(tgt.alive && tgt.invuln<=0){
-        tgt.hp -= e.dmg; tgt.invuln=0.6; tgt.hurtTimer=0.3; tgt.flashTimer=0.3;
-        tgt.vx = (tgt.x<e.x?-1:1)*5; tgt.vy=-3.5;
-        Snd.hurt(); G.shake=Math.max(G.shake,5);
-        if(tgt.hp<=0){ tgt.hp=0; tgt.alive=false; tgt.state='dead'; }
-      }
+    const hitPlayer = (up)=>{
+      if(!(tgt.alive && tgt.invuln<=0)) return;
+      tgt.hp -= e.dmg; tgt.invuln=0.6;
+      tgt.hurtTimer = heavy?0.45:0.3; tgt.flashTimer=0.3;
+      tgt.knockTimer = heavy?0.4:0.12;
+      if(up){ tgt.vy = heavy?-10:-7.5; tgt.vx = (tgt.x<e.x?-1:1)*(heavy?8:4); }
+      else  { tgt.vx = (tgt.x<e.x?-1:1)*(heavy?13:5); tgt.vy = heavy?-6:-3.5; }
+      tgt.onGround=false;
+      Snd.hurt(); G.shake=Math.max(G.shake, heavy?10:5);
+      if(tgt.hp<=0){ tgt.hp=0; tgt.alive=false; tgt.state='dead'; }
+    };
+    if(!swinging && e.atkCD<=0 && overhead){
+      // punch up at a stomper â€” fires even while taking the stomp hit
+      e.atkCD=e.atkEvery; e.atkAnim=0.24; e.atkAnimMax=0.24; e.atkState='punchup'; e.animTime=0;
+      if(Math.abs(tgt.x-e.x)>4) e.facing = tgt.x>e.x?1:-1;
+      hitPlayer(true);
+    } else if(!knocked && !swinging && e.atkCD<=0 && close){
+      e.atkCD=e.atkEvery; e.atkAnim=0.20; e.atkAnimMax=0.20; e.atkState='punch'; e.animTime=0;
+      e.punchArm = e.punchArm?0:1;
+      hitPlayer(false);
     }
   }
 }
@@ -762,6 +790,15 @@ function drawWorld(){
 function limb(ox,oy,angle,len,facing){
   return [ox + facing*Math.sin(angle)*len, oy + Math.cos(angle)*len];
 }
+function clamp01(v){ return v<0?0:v>1?1:v; }
+// two-segment limb with a joint (knee / elbow): upper segment at angle a1, lower at a2,
+// both measured from straight-down with forward = +facing. Draws hipâ†’kneeâ†’foot polyline.
+function jLimb(ox,oy,a1,a2,l1,l2,facing){
+  const mx=ox+facing*Math.sin(a1)*l1, my=oy+Math.cos(a1)*l1;
+  const ex=mx+facing*Math.sin(a2)*l2, ey=my+Math.cos(a2)*l2;
+  ctx.beginPath(); ctx.moveTo(ox,oy); ctx.lineTo(mx,my); ctx.lineTo(ex,ey); ctx.stroke();
+  return [ex,ey,mx,my];
+}
 function drawStick(a, opt){
   opt=opt||{};
   const fx=a.x, fy=a.y, H=opt.h||a.h, dir=a.facing, t=a.animTime||0;
@@ -778,26 +815,87 @@ function drawStick(a, opt){
   const color = (a.flashTimer&&a.flashTimer>0 && Math.floor(a.flashTimer*20)%2===0)? '#d83b34' : a.color;
   ctx.strokeStyle=color; ctx.lineWidth=a.lw||3.2; ctx.lineCap='round'; ctx.lineJoin='round';
   const hipY=fy-H*0.46, shY=fy-H*0.82, headR=H*0.13, headY=shY-headR*1.15;
-  // limb poses
-  let armA=0.2, armB=-0.2, legA=0.16, legB=-0.16, lean=0;
+  // ---- pose: two-segment limbs (thigh+shin with a knee, upper-arm+forearm with an elbow) ----
   const st=a.state;
-  if(st==='run'){ const s=Math.sin(t); legA=s*0.55; legB=-s*0.55; armA=-s*0.5; armB=s*0.5; lean=0.06; }
-  else if(st==='climb'){ const s=Math.sin(t); armA=-1.6+s*0.3; armB=-1.6-s*0.3; legA=0.3+s*0.4; legB=0.3-s*0.4; }
-  else if(st==='jump'){ legA=0.5; legB=0.3; armA=-0.9; armB=-1.0; lean=0.05; }
-  else if(st==='punch'){ armA=dirFrontPunch(a); armB=0.6; legA=0.2; legB=-0.25; lean=0.12; }
-  else if(st==='kick'){ legA=kickLeg(a); legB=-0.2; armA=-0.5; armB=0.5; lean=-0.05; }
-  else if(st==='hurt'||a.hurtTimer>0){ lean=-0.25; armA=-0.6; armB=-0.7; }
-  else { const s=Math.sin(t*0.5)*0.06; armA=0.18+s; armB=-0.18-s; }
+  // strike progress drives the snap: 0 = wind-up (joint cocked), 1 = full extension
+  let strike=0;
+  if(st==='punch' && a.atkDur){
+    // player one-two: two jab pulses, each rising to full extension and snapping back
+    const prog = clamp01(a.atkTimer / a.atkDur);
+    const half = prog < 0.5 ? prog/0.5 : (prog-0.5)/0.5;
+    strike = Math.sin(clamp01(half)*Math.PI);
+  } else {
+    let snap=0;
+    if((st==='punch'||st==='kick') && a.atkDur){ snap = clamp01(a.atkTimer / a.atkDur); }
+    else if((st==='punch'||st==='punchup'||st==='kick') && a.atkAnim!=null && a.atkAnim>0){
+      snap = clamp01(1 - a.atkAnim/(a.atkAnimMax||0.24));
+    }
+    strike = Math.sin(clamp01(snap*1.25)*Math.PI*0.9);
+  }   // ramps 0 -> 1 then eases back
+
+  // per-limb segment angles (upper, lower) measured from straight-down, + = forward
+  let fA1, fA2, bA1, bA2;   // front / back arm
+  let fL1, fL2, bL1, bL2;   // front / back leg
+  let lean=0;
+
+  if(st==='run'){
+    const s=Math.sin(t);
+    fL1=s*0.62;  fL2=fL1-(0.18+Math.max(0,s)*0.95);   // the forward-swinging leg folds at the knee
+    bL1=-s*0.62; bL2=bL1-(0.18+Math.max(0,-s)*0.95);
+    fA1=-s*0.55; fA2=fA1+0.65;                          // bent, pumping arms
+    bA1=s*0.55;  bA2=bA1+0.65;
+    lean=0.08;
+  } else if(st==='climb'){
+    const s=Math.sin(t);
+    fA1=-1.5+s*0.3; fA2=fA1+0.25; bA1=-1.5-s*0.3; bA2=bA1+0.25;
+    fL1=0.32+s*0.4; fL2=fL1+0.55; bL1=0.32-s*0.4; bL2=bL1+0.55;
+  } else if(st==='jump'){
+    fL1=0.4;  fL2=fL1-0.7;  bL1=0.18; bL2=bL1-0.35;    // knees tucked under
+    fA1=-0.9; fA2=fA1+0.7;  bA1=-1.0; bA2=bA1+0.7; lean=0.05;
+  } else if(st==='punch'){
+    // one-two: the live hand winds back + folds at the elbow, then launches straight out;
+    // the other hand guards across the chest. Hands alternate each punch (a.punchArm).
+    const pUpper = -0.6 + strike*(Math.PI*0.5 + 0.6);   // shoulder swings back -> forward
+    const pFore  = pUpper + (1.35 - strike*1.35);       // elbow deeply folded -> snaps straight
+    const gUpper = 0.5, gFore = gUpper + 1.1;           // guard arm tucked & bent
+    if(a.punchArm){ fA1=pUpper; fA2=pFore; bA1=gUpper; bA2=gFore; }
+    else          { bA1=pUpper; bA2=pFore; fA1=gUpper; fA2=gFore; }
+    fL1 = 0.32; fL2 = fL1 - 0.16;
+    bL1 = -0.36; bL2 = bL1 + 0.22;                      // braced rear leg, bent knee
+    lean = 0.04 + strike*0.14;
+  } else if(st==='punchup'){
+    // uppercut: bent arm drives up and overhead
+    fA1 = -0.45 - strike*1.15;
+    fA2 = fA1 + (1.05 - strike*0.9);
+    bA1 = 0.4; bA2 = bA1 + 0.95;
+    fL1 = 0.26; fL2 = fL1 - 0.18;
+    bL1 = -0.3; bL2 = bL1 + 0.22;
+    lean = -0.05 - strike*0.05;
+  } else if(st==='kick'){
+    // chambered knee whips out into a straight leg
+    fL1 = 0.22 + strike*(Math.PI*0.45);
+    fL2 = fL1 - (1.25 - strike*1.25);                   // shin folded at chamber, snaps straight
+    bL1 = -0.2; bL2 = bL1 + 0.18;                       // planted support leg, slight knee bend
+    fA1 = -0.55; fA2 = fA1 - 0.4; bA1 = 0.55; bA2 = bA1 + 0.6;
+    lean = -0.05 - strike*0.04;
+  } else if(st==='hurt' || a.hurtTimer>0){
+    lean=-0.28;
+    fA1=-0.6; fA2=fA1+0.55; bA1=-0.78; bA2=bA1+0.55;
+    fL1=0.22; fL2=fL1-0.18; bL1=-0.22; bL2=bL1+0.18;
+  } else { // idle â€” soft joints, subtle breathing
+    const s=Math.sin(t*0.5)*0.06;
+    fA1=0.18+s; fA2=fA1+0.4; bA1=-0.18-s; bA2=bA1+0.32;
+    fL1=0.14; fL2=fL1-0.12; bL1=-0.14; bL2=bL1+0.1;
+  }
 
   // apply lean to upper body
   const shX = fx + dir*lean*H*0.5;
-  const headX = headY!=null ? shX + dir*lean*H*0.3 : fx;
+  const headX = shX + dir*lean*H*0.3;
 
-  // legs (from hip)
-  let [lx1,ly1]=limb(fx,hipY,legA,H*0.46,dir);
-  let [lx2,ly2]=limb(fx,hipY,legB,H*0.46,dir);
-  ctx.beginPath(); ctx.moveTo(fx,hipY); ctx.lineTo(lx1,ly1);
-  ctx.moveTo(fx,hipY); ctx.lineTo(lx2,ly2); ctx.stroke();
+  const thigh=H*0.25, shin=H*0.23, upArm=H*0.2, foreArm=H*0.2;
+  // back-side limbs first, then torso, then front-side limbs on top
+  jLimb(fx, hipY, bL1, bL2, thigh, shin, dir);
+  jLimb(fx, hipY, fL1, fL2, thigh, shin, dir);
   // torso
   ctx.beginPath(); ctx.moveTo(fx,hipY); ctx.lineTo(shX,shY); ctx.stroke();
   // female skirt
@@ -807,10 +905,8 @@ function drawStick(a, opt){
     ctx.fillStyle=color; ctx.globalAlpha=0.16; ctx.fill(); ctx.globalAlpha=1; ctx.stroke();
   }
   // arms (from shoulder)
-  let [ax1,ay1]=limb(shX,shY,armA,H*0.4,dir);
-  let [ax2,ay2]=limb(shX,shY,armB,H*0.4,dir);
-  ctx.beginPath(); ctx.moveTo(shX,shY); ctx.lineTo(ax1,ay1);
-  ctx.moveTo(shX,shY); ctx.lineTo(ax2,ay2); ctx.stroke();
+  jLimb(shX, shY, bA1, bA2, upArm, foreArm, dir);
+  jLimb(shX, shY, fA1, fA2, upArm, foreArm, dir);
   // head
   ctx.beginPath(); ctx.arc(headX, headY, headR, 0, Math.PI*2);
   if(a.fillHead){ ctx.fillStyle=color; ctx.fill(); }
@@ -1062,11 +1158,19 @@ function drawStickOn(c, a){
   const fx=a.x, fy=a.y, H=a.h, dir=a.facing;
   c.strokeStyle=a.color; c.lineWidth=a.lw; c.lineCap='round'; c.lineJoin='round';
   const hipY=fy-H*0.46, shY=fy-H*0.82, headR=H*0.13, headY=shY-headR*1.15;
-  c.beginPath(); c.moveTo(fx,hipY); c.lineTo(fx-H*0.1,fy); c.moveTo(fx,hipY); c.lineTo(fx+H*0.1,fy); c.stroke();
+  // legs with a knee joint
+  c.beginPath();
+  c.moveTo(fx,hipY); c.lineTo(fx-H*0.11,hipY+H*0.24); c.lineTo(fx-H*0.13,fy);
+  c.moveTo(fx,hipY); c.lineTo(fx+H*0.11,hipY+H*0.24); c.lineTo(fx+H*0.10,fy);
+  c.stroke();
   c.beginPath(); c.moveTo(fx,hipY); c.lineTo(fx,shY); c.stroke();
   if(a.gender==='female'){ c.beginPath(); c.moveTo(fx,hipY-H*0.14); c.lineTo(fx-H*0.17,hipY+H*0.04);
     c.lineTo(fx+H*0.17,hipY+H*0.04); c.closePath(); c.globalAlpha=0.16; c.fillStyle=a.color; c.fill(); c.globalAlpha=1; c.stroke(); }
-  c.beginPath(); c.moveTo(fx,shY); c.lineTo(fx-H*0.12,shY+H*0.34); c.moveTo(fx,shY); c.lineTo(fx+H*0.12,shY+H*0.34); c.stroke();
+  // arms with an elbow joint
+  c.beginPath();
+  c.moveTo(fx,shY); c.lineTo(fx-H*0.13,shY+H*0.18); c.lineTo(fx-H*0.10,shY+H*0.36);
+  c.moveTo(fx,shY); c.lineTo(fx+H*0.13,shY+H*0.18); c.lineTo(fx+H*0.10,shY+H*0.36);
+  c.stroke();
   c.beginPath(); c.arc(fx,headY,headR,0,Math.PI*2); c.fillStyle='#f4f2ec'; c.fill(); c.stroke();
   if(a.gender==='female'){ c.beginPath(); c.arc(fx-headR*0.7,headY+headR*0.1,headR*0.55,0,Math.PI*2);
     c.fillStyle=a.color; c.globalAlpha=0.6; c.fill(); c.globalAlpha=1; }
