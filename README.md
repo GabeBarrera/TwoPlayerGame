@@ -58,7 +58,8 @@ phone the view goes full-screen portrait and the camera follows your fighter.
 - Variants: **fast/weak** (small, quick) and **slow/tough** (big, slow,
   **9 hits** and hits for **10 HP**).
 - **Punches count double** (2 hits each); kicks land 1 hit but launch enemies back.
+- **Stomp** an enemy Mario-style - jump and land on its head - for 1 hit and a bounce.
 - Defeated enemies sometimes drop a **+25 HP** pickup (green cross)...
-- ...or, more rarely, a **blue power orb**: grab it for **20 seconds** of
+- ...or, rarely, a **blue power orb**: grab it for **10 seconds** of
   **insta-kill** strikes and **faster movement**.
 - Endless waves, steadily harder. Survive for the high score (saved locally).

@@ -460,6 +460,19 @@ function updatePlayer(p, ctrl, dt){
     }
     if(ctrl.jumpQ && p.onGround && !attacking){ p.vy=P_JUMP; p.onGround=false; Snd.jump(); }
     applyGravityAndPlatforms(p);
+    // Mario-style stomp: falling onto an enemy's head deals one hit and bounces the player
+    if(p.vy > 1){
+      for(const e of G.enemies){
+        if(!e.alive) continue;
+        if(Math.abs(e.x - p.x) < e.h*0.32 + 14 && p.y > e.y - e.h - 12 && p.y < e.y - e.h*0.45){
+          e.hits -= 1; e.hurtTimer = 0.2; e.vy = 0;
+          p.vy = P_JUMP*0.62; p.onGround = false;   // bounce up off the enemy
+          Snd.hit(); G.shake = Math.max(G.shake, 4);
+          if(e.hits<=0){ killEnemy(e, p); }
+          break;
+        }
+      }
+    }
     // animation state
     if(!attacking){
       if(!p.onGround) p.state='jump';
@@ -580,8 +593,8 @@ function killEnemy(e, by){
   Snd.die();
   G.fx.push(makeFx(e.x, e.y-e.h-8, '+'+pts, '#8a857a'));
   const roll=Math.random();
-  if(roll<0.12){ G.drops.push(makeDrop(e.x, e.y-e.h*0.6, 'power')); }       // rare blue power orb
-  else if(roll<0.42){ G.drops.push(makeDrop(e.x, e.y-e.h*0.6, 'hp')); }     // +25 HP drop
+  if(roll<0.06){ G.drops.push(makeDrop(e.x, e.y-e.h*0.6, 'power')); }       // rare blue power orb
+  else if(roll<0.36){ G.drops.push(makeDrop(e.x, e.y-e.h*0.6, 'hp')); }     // +25 HP drop
 }
 
 /* ---------- Waves ---------- */
@@ -624,7 +637,7 @@ function updateDrops(dt){
       const near = Math.abs(pl.x-d.x)<30 && Math.abs((pl.y-30)-d.y)<48;
       if(!near) continue;
       if(d.type==='power'){
-        pl.powerTimer = 20; d.ttl=-1; Snd.power();
+        pl.powerTimer = 10; d.ttl=-1; Snd.power();
         G.fx.push(makeFx(pl.x, pl.y-pl.h-6, 'POWER!', '#2f6fe0'));
       } else if(pl.hp<pl.maxHp){          // HP orb only when not full; otherwise left on the ground
         pl.hp=Math.min(pl.maxHp, pl.hp+d.amount); d.ttl=-1; Snd.pickup();
