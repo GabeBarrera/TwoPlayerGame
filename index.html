@@ -538,29 +538,30 @@ function updateEnemy(e, dt){
   const knocked = e.hurtTimer>0;
   let desiredDir = 0;
   if(e.climbing){
-    e.x += (e.ladder.x - e.x)*0.3;
-    const want = tgt.y < e.y-30 ? -1 : (tgt.y > e.y+30 ? 1 : 0);
-    e.y += want*e.speed*0.9;
+    const L=e.ladder;
+    e.x += (L.x - e.x)*0.35;                  // hug the rungs
+    const dir = (tgt.y < e.y - 4) ? -1 : 1;   // up toward a target above, else down
+    e.y += dir*e.speed*0.95; e.vy=0;
     e.state='climb'; e.animTime+=0.18;
-    if(e.y<=e.ladder.top){ e.y=e.ladder.top; e.climbing=false; e.onGround=true; }
-    if(e.y>=e.ladder.bottom){ e.y=e.ladder.bottom; e.climbing=false; }
-    if(want===0) e.climbing=false;
+    // only ever leave the ladder at one of its platform ends, never mid-rung
+    if(e.y <= L.top){ e.y=L.top; e.climbing=false; e.onGround=true; }
+    else if(e.y >= L.bottom){ e.y=L.bottom; e.climbing=false; e.onGround=true; }
   } else {
     const dy = tgt.y - e.y;
     let targetX = tgt.x;
-    if(Math.abs(dy) > 60){
-      // need to change level: head to nearest useful ladder
+    if(Math.abs(dy) > 60 && e.onGround && !knocked){
+      // change level: pick the nearest ladder this enemy can actually board from its
+      // current platform, going the right way (up if the target is above, else down)
       let best=null, bdist=1e9;
       for(const L of LADDERS){
-        const connectsDown = dy>0 && L.top <= e.y+10 && L.bottom >= tgt.y-10;
-        const connectsUp = dy<0 && L.bottom >= e.y-10 && L.top <= tgt.y+30;
-        if(connectsDown||connectsUp){ const d=Math.abs(L.x-e.x); if(d<bdist){ bdist=d; best=L; } }
+        const atBottom = Math.abs(e.y - L.bottom) < 26;   // standing at this ladder's foot
+        const atTop    = Math.abs(e.y - L.top)    < 26;   // standing at this ladder's head
+        const usable = (dy < 0 && atBottom) || (dy > 0 && atTop);
+        if(usable){ const d=Math.abs(L.x-e.x); if(d<bdist){ bdist=d; best=L; } }
       }
-      if(!best){ // fallback: closest ladder
-        for(const L of LADDERS){ const d=Math.abs(L.x-e.x); if(d<bdist){ bdist=d; best=L; } } }
       if(best){
         targetX = best.x;
-        if(Math.abs(e.x-best.x)<14 && !knocked){ e.climbing=true; e.ladder=best; }
+        if(Math.abs(e.x-best.x) < 16){ e.climbing=true; e.ladder=best; e.vy=0; }
       }
     }
     if(!knocked){
