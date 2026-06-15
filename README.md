@@ -1,4 +1,4 @@
-# Site Brawl - stick-figure fighting platformer
+# Stick Brawl - stick-figure fighting platformer
 
 A single-file HTML5 canvas brawler. Black stick figures swarm a construction
 site; punch and kick through endless waves. Solo by default, with a second
@@ -62,4 +62,5 @@ phone the view goes full-screen portrait and the camera follows your fighter.
 - Defeated enemies sometimes drop a **+25 HP** pickup (green cross)...
 - ...or, rarely, a **blue power orb**: grab it for **10 seconds** of
   **insta-kill** strikes and **faster movement**.
-- Endless waves, steadily harder. Survive for the high score (saved locally).
+- Endless waves, steadily harder. Survive for the high score (saved locally
+  under `stickbrawl_highscore`).

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<title>Site Brawl &mdash; Stick Figure Fighter</title>
+<title>Stick Brawl &mdash; Stick Figure Fighter</title>
 <style>
   :root{ --ink:#15140f; --paper:#f4f2ec; --red:#d83b34; --blue:#2f6fe0; --green:#2faa55; }
   *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
@@ -102,7 +102,7 @@
   <div class="screen" id="titleScreen">
     <div class="panel">
       <p class="kicker">Endless &middot; Construction Site</p>
-      <h1><span class="red">SITE</span> <span class="blue">BRAWL</span></h1>
+      <h1><span class="red">STICK</span> <span class="blue">BRAWL</span></h1>
       <p class="sub">Black stick figures swarm the scaffolding. Punch and kick your way through
         endless waves. Pick your fighter to drop in.</p>
       <p class="who" id="selWho">Player <b class="r">1</b> &middot; choose your fighter</p>
@@ -165,7 +165,7 @@
 
 <script>
 /* ============================================================================
-   SITE BRAWL - single-file stick-figure fighting platformer
+   STICK BRAWL - single-file stick-figure fighting platformer
    Plain HTML/CSS/JS canvas game. Works standalone (GitHub Pages / static host).
    Optional cross-device 2P when served by the companion server.js relay.
 ============================================================================ */
@@ -390,7 +390,7 @@ function makeFx(x,y,text,color){ return { x, y, text, color, life:0.7 }; }
 const G = {
   running:false, paused:false, over:false,
   players:[], enemies:[], drops:[], fx:[],
-  wave:0, kills:0, score:0, best: +(localStorage.getItem('sitebrawl_best')||0),
+  wave:0, kills:0, score:0, best: +(localStorage.getItem('stickbrawl_highscore')||localStorage.getItem('sitebrawl_best')||0),
   spawnQueue:[], spawnTimer:0, waveBanner:0, betweenWaves:0,
   acc:0, last:0, shake:0,
 };
@@ -540,12 +540,12 @@ function updateEnemy(e, dt){
   if(e.climbing){
     const L=e.ladder;
     e.x += (L.x - e.x)*0.35;                  // hug the rungs
-    const dir = (tgt.y < e.y - 4) ? -1 : 1;   // up toward a target above, else down
+    const dir = e.climbDir || -1;             // committed at board time; ride fully to that end
     e.y += dir*e.speed*0.95; e.vy=0;
     e.state='climb'; e.animTime+=0.18;
     // only ever leave the ladder at one of its platform ends, never mid-rung
-    if(e.y <= L.top){ e.y=L.top; e.climbing=false; e.onGround=true; }
-    else if(e.y >= L.bottom){ e.y=L.bottom; e.climbing=false; e.onGround=true; }
+    if(dir<0 && e.y <= L.top){ e.y=L.top; e.climbing=false; e.onGround=true; }
+    else if(dir>0 && e.y >= L.bottom){ e.y=L.bottom; e.climbing=false; e.onGround=true; }
   } else {
     const dy = tgt.y - e.y;
     let targetX = tgt.x;
@@ -561,7 +561,7 @@ function updateEnemy(e, dt){
       }
       if(best){
         targetX = best.x;
-        if(Math.abs(e.x-best.x) < 16){ e.climbing=true; e.ladder=best; e.vy=0; }
+        if(Math.abs(e.x-best.x) < 16){ e.climbing=true; e.ladder=best; e.vy=0; e.climbDir = (dy<0)?-1:1; }
       }
     }
     if(!knocked){
@@ -977,7 +977,7 @@ function addPlayer(team, gender){
 }
 function gameOver(){
   G.over=true;
-  if(G.score>G.best){ G.best=G.score; localStorage.setItem('sitebrawl_best', G.best); }
+  if(G.score>G.best){ G.best=G.score; localStorage.setItem('stickbrawl_highscore', G.best); }
   document.getElementById('overWave').textContent='Wave '+G.wave;
   document.getElementById('overScore').textContent=G.score;
   document.getElementById('overKills').textContent=G.kills;

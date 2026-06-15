@@ -1,5 +1,5 @@
 /* ============================================================================
-   Site Brawl — optional local relay server (cross-device 2-player)
+   Stick Brawl - optional local relay server (cross-device 2-player)
    ----------------------------------------------------------------------------
    Pure Node.js. NO npm install, NO dependencies. Just Node itself.
 
@@ -153,7 +153,7 @@ server.listen(PORT, '0.0.0.0', () => {
   for (const name of Object.keys(nets))
     for (const ni of nets[name])
       if (ni.family === 'IPv4' && !ni.internal) ips.push(ni.address);
-  console.log('\n  Site Brawl relay running:');
+  console.log('\n  Stick Brawl relay running:');
   console.log('    Local:    http://localhost:' + PORT);
   ips.forEach(ip => console.log('    Network:  http://' + ip + ':' + PORT + '   <- open this on your phone (same Wi-Fi)'));
   console.log('\n  First connection = Player 1 (red).  Second = Player 2 (blue).');
